@@ -1,0 +1,24 @@
+{
+  "name": "brsr-compass",
+  "version": "1.0.0",
+  "description": "BRSR Compass — Benchmark • Assess • Bridge the Gap",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "jspdf": "^2.5.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.0"
+  },
+  "keywords": ["brsr", "esg", "sustainability", "srmm", "icai", "sebi"],
+  "author": "Prathamesh Parashar",
+  "license": "MIT"
+}
