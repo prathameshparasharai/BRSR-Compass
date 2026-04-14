@@ -2236,7 +2236,11 @@ function AssessView({ data, answers, setAnswer, currentSection, setCurrentSectio
 
       const scoringSchema = buildScoringPrompt();
 
-      const headers = { "Content-Type": "application/json" };
+      const headers = {
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      };
       if (apiKey) headers["x-api-key"] = apiKey;
 
       const response = await fetch("https://api.anthropic.com/v1/messages", {
