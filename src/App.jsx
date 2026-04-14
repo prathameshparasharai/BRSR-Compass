@@ -2197,12 +2197,12 @@ function AssessView({ data, answers, setAnswer, currentSection, setCurrentSectio
   const [uploadMsg, setUploadMsg] = useState("");
   const [prefillCount, setPrefillCount] = useState(0);
 
-  // Build a compact scoring schema prompt for the AI
+  // Build compact scoring schema - only IDs, max scores, and valid values
   const buildScoringPrompt = () => {
-    let schema = [];
+    let schema = {};
     SECTION_KEYS.forEach(k => {
       data[k].items.forEach(item => {
-        schema.push({ id: item.id, ref: item.ref, label: item.label, max: item.max, type: item.type, options: item.options.map(o => `${o.v}: ${o.l}`).join(" | ") });
+        schema[item.id] = { r: item.ref, m: item.max, v: item.options.map(o => o.v), l: item.label.slice(0, 60) };
       });
     });
     return JSON.stringify(schema);
@@ -2211,8 +2211,8 @@ function AssessView({ data, answers, setAnswer, currentSection, setCurrentSectio
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const maxSize = 10 * 1024 * 1024;
-    if (file.size > maxSize) { setUploadStatus("error"); setUploadMsg("File too large (max 10MB)"); return; }
+    const maxSize = 20 * 1024 * 1024;
+    if (file.size > maxSize) { setUploadStatus("error"); setUploadMsg("File too large (max 20MB)"); return; }
 
     setUploadStatus("uploading");
     setUploadMsg(`Reading ${file.name}...`);
@@ -2232,7 +2232,7 @@ function AssessView({ data, answers, setAnswer, currentSection, setCurrentSectio
       else if (ext === "csv") mediaType = "text/csv";
 
       setUploadStatus("analyzing");
-      setUploadMsg("AI is analyzing your BRSR document against SRMM v2.0 criteria...");
+      setUploadMsg("AI is analyzing your BRSR document against SRMM v2.0 criteria... This may take 30-60 seconds.");
 
       const scoringSchema = buildScoringPrompt();
 
@@ -2248,7 +2248,7 @@ function AssessView({ data, answers, setAnswer, currentSection, setCurrentSectio
         headers,
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 4000,
+          max_tokens: 8096,
           messages: [{
             role: "user",
             content: [
@@ -2258,33 +2258,59 @@ function AssessView({ data, answers, setAnswer, currentSection, setCurrentSectio
               },
               {
                 type: "text",
-                text: `You are an expert BRSR (Business Responsibility and Sustainability Reporting) analyst for Indian listed companies per SEBI guidelines and ICAI's SRMM v2.0.
+                text: `You are an expert BRSR analyst. Analyze this document and score it against ICAI SRMM v2.0.
 
-Analyze this uploaded BRSR/sustainability document and score it against the SRMM v2.0 framework below.
-
-SCORING SCHEMA (JSON array of all parameters):
+SCHEMA: Each key is a parameter ID. "r"=BRSR ref, "m"=max score, "v"=valid scores, "l"=label.
 ${scoringSchema}
 
-INSTRUCTIONS:
-1. Read the entire document carefully.
-2. For each parameter ID in the schema, determine the most appropriate score based on the company's disclosures.
-3. Only score parameters where you find clear evidence in the document. If unsure, skip that parameter.
-4. Also extract the company name if found.
+RULES:
+- Score ONLY parameters with clear evidence in the document
+- Use only values from the "v" array for each parameter
+- Extract company name
+- Be concise - output ONLY the JSON below, nothing else
 
-RESPOND WITH ONLY valid JSON in this exact format, no markdown fences, no preamble:
-{"company":"Company Name","scores":{"A18":3,"A19":2,"P1_1a":3,...}}
-
-Only include IDs where you have reasonable confidence. Do not guess.`
+OUTPUT FORMAT (pure JSON, no backticks):
+{"company":"Name","scores":{"A18":3,"A19":2,"P1_1a":3}}`
               }
             ]
           }]
         })
       });
 
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody?.error?.message || `API error ${response.status}`);
+      }
+
       const result = await response.json();
       const text = result.content?.map(c => c.text || "").join("") || "";
       const cleaned = text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(cleaned);
+
+      // Robust JSON parsing - handle truncated responses
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch (jsonErr) {
+        // Try to fix truncated JSON by closing brackets
+        let fixable = cleaned;
+        if (!fixable.endsWith("}")) fixable += "}";
+        if (!fixable.endsWith("}}")) fixable += "}";
+        // Remove trailing partial entries like ,"P9_L5
+        fixable = fixable.replace(/,"[^"]*$/, "");
+        if (!fixable.endsWith("}}")) fixable += "}}";
+        try {
+          parsed = JSON.parse(fixable);
+        } catch {
+          // Last resort: extract what we can with regex
+          const companyMatch = cleaned.match(/"company"\s*:\s*"([^"]+)"/);
+          const scoresMatch = cleaned.match(/"scores"\s*:\s*\{([^]*)/);
+          parsed = { company: companyMatch?.[1] || "", scores: {} };
+          if (scoresMatch) {
+            const pairs = scoresMatch[1].matchAll(/"(\w+)"\s*:\s*(\d+)/g);
+            for (const m of pairs) parsed.scores[m[1]] = parseInt(m[2]);
+          }
+        }
+      }
 
       let count = 0;
       if (parsed.scores) {
