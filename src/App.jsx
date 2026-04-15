@@ -2338,7 +2338,13 @@ OUTPUT FORMAT (pure JSON, no backticks):
     } catch (err) {
       console.error("Upload/analysis error:", err);
       setUploadStatus("error");
-      setUploadMsg(`Analysis failed: ${err.message}. Please try again or fill manually.`);
+      const errMsg = err.message || "Unknown error";
+      const hint = errMsg.includes("Failed to fetch") ? " Check your internet connection and API key in Settings."
+        : errMsg.includes("401") ? " Invalid API key. Go to Settings → Connect API and check your key."
+        : errMsg.includes("429") ? " Rate limit exceeded. Please wait a minute and try again."
+        : errMsg.includes("overloaded") ? " API is busy. Please try again in a few seconds."
+        : " Please try again or fill manually.";
+      setUploadMsg(`Analysis failed: ${errMsg}.${hint}`);
     }
   };
 
@@ -2549,7 +2555,7 @@ function DashboardView({ scores, answers, companyName, selectedNIC, answeredCoun
           return (
             <div key={key} style={{ marginBottom: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
-                <span style={{ fontWeight: 600, color: "#1a2e23" }}>{SECTION_LABELS[key]} — {sec.title.split(":")[0]}</span>
+                <span style={{ fontWeight: 600, color: "#1a2e23" }}>{SECTION_LABELS[key]} — {sec.title}</span>
                 <span style={{ fontWeight: 700, color: "#0d5a3e" }}>{s.score}/{s.max} ({s.pct}%)</span>
               </div>
               <div style={{ background: "#e8efe9", borderRadius: 5, height: 10, overflow: "hidden" }}>
